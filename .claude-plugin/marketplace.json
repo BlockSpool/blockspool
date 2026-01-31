@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "blockspool",
+  "description": "Continuous codebase improvement — scouts, plans, executes, and creates PRs",
+  "owner": {
+    "name": "BlockSpool",
+    "email": "hello@blockspool.com"
+  },
+  "plugins": [
+    {
+      "name": "blockspool",
+      "description": "Continuous codebase improvement — scouts improvements, executes in parallel, batches into milestone PRs",
+      "version": "0.3.0",
+      "author": {
+        "name": "BlockSpool",
+        "email": "hello@blockspool.com"
+      },
+      "source": "./packages/plugin",
+      "category": "development",
+      "homepage": "https://github.com/blockspool/blockspool"
+    }
+  ]
+}
