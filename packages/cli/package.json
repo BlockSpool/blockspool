@@ -1,7 +1,7 @@
 {
   "name": "@blockspool/cli",
   "version": "0.3.0",
-  "description": "BlockSpool CLI - Autonomous coding swarm for your codebase",
+  "description": "BlockSpool CLI - Continuous codebase improvement tool",
   "author": "BlockSpool",
   "homepage": "https://blockspool.com",
   "repository": {
