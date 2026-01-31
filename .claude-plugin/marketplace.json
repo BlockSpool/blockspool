@@ -4,7 +4,7 @@
   "description": "Continuous codebase improvement — scouts, plans, executes, and creates PRs",
   "owner": {
     "name": "BlockSpool",
-    "email": "hello@blockspool.com"
+    "email": "support@blockspool.com"
   },
   "plugins": [
     {
@@ -13,7 +13,7 @@
       "version": "0.3.0",
       "author": {
         "name": "BlockSpool",
-        "email": "hello@blockspool.com"
+        "email": "support@blockspool.com"
       },
       "source": "./packages/plugin",
       "category": "development",
