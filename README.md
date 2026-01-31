@@ -10,9 +10,12 @@ BlockSpool scouts your codebase for improvements, executes them in parallel, and
 
 ### Inside Claude Code (recommended)
 
-If you're already using Claude Code, install the plugin and go:
+```bash
+# Add the marketplace and install the plugin
+claude plugin marketplace add blockspool/blockspool
+claude plugin install blockspool
 
-```
+# Then inside any Claude Code session:
 /blockspool:run
 ```
 
@@ -45,7 +48,7 @@ Come back to 5 milestone PRs containing 50+ improvements.
 | Route | Auth | Best for |
 |-------|------|----------|
 | **Plugin** (`/blockspool:run`) | Claude Code subscription | Interactive use, no API key setup |
-| **CLI + Claude** (`blockspool`) | `ANTHROPIC_API_KEY` | CI, cron jobs, overnight runs |
+| **CLI + Claude** (`blockspool`) | `ANTHROPIC_API_KEY` | CI, cron jobs, long runs |
 | **CLI + Codex** (`blockspool --codex`) | `codex login` (or `CODEX_API_KEY`) | No Anthropic key, Codex-native teams |
 | **CLI + OpenAI** (`blockspool-run --provider openai`) | `OPENAI_API_KEY` | OpenAI-native teams |
 
@@ -71,7 +74,7 @@ BlockSpool Auto
   Mode: Continuous (Ctrl+C to stop gracefully)
   Time budget: 8 hours (until 6:00 AM)
   Categories: refactor, test, docs, types, perf
-  Draft PRs: yes
+  PRs: ready-for-review
   Milestone mode: batch size 10
 
 Milestone branch: blockspool/milestone-abc123
@@ -286,7 +289,7 @@ BlockSpool uses a trust ladder to control what changes are auto-approved:
 
 | Mode | Categories | Use Case |
 |------|------------|----------|
-| **Default** | refactor, test, docs, types, perf | Safe overnight runs |
+| **Default** | refactor, test, docs, types, perf | Safe default |
 | **Aggressive** | + security, fix, cleanup | When you want more |
 
 ```bash
@@ -318,7 +321,7 @@ Optional `.blockspool/config.json`:
 
 See [docs/COMPARISON.md](./docs/COMPARISON.md) for a detailed comparison with Gas Town, Factory.ai, Devin, and others.
 
-**TL;DR:** BlockSpool is the only tool designed for unattended overnight runs with built-in cost control, scope enforcement, and milestone batching. Other tools either require constant steering (Gas Town), are SaaS-only (Factory, Devin), or handle only simple fixes (Sweep).
+**TL;DR:** BlockSpool is the only tool designed for continuous codebase improvement with built-in cost control, scope enforcement, and milestone batching. Other tools either require constant steering (Gas Town), are SaaS-only (Factory, Devin), or handle only simple fixes (Sweep).
 
 ---
 
