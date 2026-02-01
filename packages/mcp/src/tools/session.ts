@@ -7,7 +7,7 @@ import { z } from 'zod';
 import type { SessionManager } from '../state.js';
 import { advance } from '../advance.js';
 import { processEvent } from '../event-processor.js';
-import type { EventType } from '../types.js';
+import type { EventType, SessionConfig } from '../types.js';
 import { deriveScopePolicy, isFileAllowed, serializeScopePolicy } from '../scope-policy.js';
 import { repos } from '@blockspool/core';
 import { loadFormula, applyFormula, listFormulas } from '../formulas.js';
@@ -35,7 +35,7 @@ export function registerSessionTools(server: McpServer, getState: () => SessionM
       const state = getState();
 
       // Load and apply formula if specified
-      let config = {
+      let config: SessionConfig = {
         hours: params.hours,
         formula: params.formula,
         deep: params.deep,
