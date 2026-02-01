@@ -129,6 +129,42 @@ Auto-detected from `package.json` during `solo init`:
 - `test` - Testing
 - `build` - Build verification
 
+### Project Guidelines Context
+
+BlockSpool automatically loads your project guidelines and injects them into every scout and execution prompt so agents respect your conventions.
+
+**File selection by backend:**
+
+| Backend | Primary | Fallback |
+|---------|---------|----------|
+| Claude | `CLAUDE.md` | `AGENTS.md` |
+| Codex | `AGENTS.md` | `CLAUDE.md` |
+
+**Behavior:**
+
+- **Auto-create:** If no guidelines file exists, a baseline is generated from your `package.json` (project name, TypeScript detection, test/lint/build commands, monorepo detection)
+- **Truncation:** Content longer than 4000 characters is truncated with a `[truncated]` marker
+- **Refresh:** During long runs, re-reads every N cycles (default 10, configurable)
+- **Format:** Wrapped in `<project-guidelines>` XML tags in the prompt
+
+Configure in `.blockspool/config.json`:
+
+```json
+{
+  "auto": {
+    "guidelinesRefreshCycles": 10,
+    "autoCreateGuidelines": true,
+    "guidelinesPath": null
+  }
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `guidelinesRefreshCycles` | `10` | Re-read every N cycles (0 = disabled, still loaded once at start) |
+| `autoCreateGuidelines` | `true` | Auto-create baseline file from `package.json` if none exists |
+| `guidelinesPath` | `null` | Custom path relative to repo root (e.g. `"docs/CONVENTIONS.md"`). Set to `false` to disable guidelines entirely. `null` = default search. |
+
 ### Spindle Loop Detection
 Prevents runaway agent execution:
 - **Oscillation**: Detects add→remove→add patterns

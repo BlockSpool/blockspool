@@ -182,6 +182,15 @@ export function recordDiff(spindle: SpindleState, diff: string | null): void {
     if (!spindle.file_edit_counts) spindle.file_edit_counts = {};
     spindle.file_edit_counts[f] = existing + 1;
   }
+
+  // Cap file_edit_counts keys to prevent unbounded growth
+  const MAX_FILE_EDIT_KEYS = 50;
+  if (spindle.file_edit_counts && Object.keys(spindle.file_edit_counts).length > MAX_FILE_EDIT_KEYS) {
+    const sorted = Object.entries(spindle.file_edit_counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_FILE_EDIT_KEYS);
+    spindle.file_edit_counts = Object.fromEntries(sorted);
+  }
 }
 
 export function recordCommandFailure(spindle: SpindleState, command: string, error: string): void {

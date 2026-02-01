@@ -85,6 +85,8 @@ export interface ScoutRepoOptions {
   autoApprove?: boolean;
   /** Scout backend override (default: ClaudeScoutBackend) */
   backend?: ScoutBackend;
+  /** Files the scout can read but must NOT propose changes to */
+  protectedFiles?: string[];
 }
 
 /**
@@ -197,6 +199,7 @@ export async function scoutRepo(
       recentlyCompletedTitles: recentTitles,
       customPrompt: opts.customPrompt,
       backend: opts.backend,
+      protectedFiles: opts.protectedFiles,
       onProgress: (p) => {
         report({
           phase: 'analyzing',

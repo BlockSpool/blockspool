@@ -32,6 +32,7 @@ BlockSpool is the only tool in category 3: purpose-built for continuous codebase
 | **Formulas** | Yes (built-in + custom YAML) | Yes (TOML-based) | No | 31+ skills | No | No | No | No |
 | **Deep architectural review** | Yes (`--deep`) | No | No | No | No | Partial | No | No |
 | **Impact scoring** | Yes (impact x confidence) | No | No | No | No | No | No | No |
+| **Project guidelines** | Yes (CLAUDE.md / AGENTS.md auto-loaded) | No | No | No | No | No | No | No |
 | **Loop detection** | Yes (Spindle) | No | No | No | Unknown | Unknown | No | No |
 | **Cost per 8h run** | Fraction of alternatives | High (20-30 agents) | Claude Code sub | Claude Code sub | SaaS pricing | Subscription | Free tier | Claude Code sub |
 | **Runtime** | Claude Code CLI, Codex CLI, or OpenAI API | Claude, Codex, Aider | Claude Code CLI | Claude Code CLI | Proprietary | Proprietary | GitHub Actions | Claude Code (MCP server) |
@@ -148,6 +149,7 @@ BlockSpool occupies a unique position: **the continuous improvement engine.**
 No other tool combines:
 - Proactive scouting (finds work to do)
 - Milestone batching (coherent PRs)
+- Project guidelines awareness (auto-loads CLAUDE.md / AGENTS.md into every prompt)
 - Cost control (fraction of what alternatives cost)
 - Safety guarantees (scope enforcement, trust ladder, dedup)
 - Four ways to run: Plugin, Claude CLI, Codex CLI, or OpenAI CLI

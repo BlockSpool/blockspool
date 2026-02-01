@@ -168,4 +168,69 @@ export function registerLifecycleCommands(solo: Command): void {
 
       console.log(chalk.green('✓ Local state cleared'));
     });
+
+  /**
+   * solo prune - Clean up stale state
+   */
+  solo
+    .command('prune')
+    .description('Remove stale runs, history, artifacts, and archives')
+    .option('--dry-run', 'Show what would be deleted without deleting')
+    .action(async (options: { dryRun?: boolean }) => {
+      const git = createGitService();
+      const repoRoot = await git.findRepoRoot(process.cwd());
+
+      if (!repoRoot) {
+        console.error(chalk.red('✗ Not a git repository'));
+        process.exit(1);
+      }
+
+      if (!isInitialized(repoRoot)) {
+        console.error(chalk.red('✗ BlockSpool not initialized'));
+        console.error(chalk.gray('  Run: blockspool init'));
+        process.exit(1);
+      }
+
+      const { loadConfig } = await import('../lib/solo-config.js');
+      const {
+        pruneAllAsync,
+        getRetentionConfig,
+        formatPruneReport,
+      } = await import('../lib/retention.js');
+
+      const config = loadConfig(repoRoot);
+      const retentionConfig = getRetentionConfig(config);
+
+      let adapter: Awaited<ReturnType<typeof getAdapter>> | null = null;
+      try {
+        adapter = await getAdapter(repoRoot);
+      } catch {
+        // DB may not exist yet — prune without it
+      }
+
+      const dryRun = options.dryRun ?? false;
+
+      console.log(chalk.blue(dryRun ? 'Prune (dry run)' : 'Pruning stale state...'));
+      console.log();
+
+      const report = await pruneAllAsync(
+        repoRoot,
+        retentionConfig,
+        adapter,
+        dryRun,
+      );
+
+      console.log(formatPruneReport(report, dryRun));
+      console.log();
+
+      if (!dryRun && report.totalPruned > 0) {
+        console.log(chalk.green(`✓ Pruned ${report.totalPruned} item(s)`));
+      } else if (!dryRun) {
+        console.log(chalk.green('✓ Nothing to prune'));
+      }
+
+      if (adapter) {
+        await adapter.close();
+      }
+    });
 }

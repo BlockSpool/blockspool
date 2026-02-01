@@ -120,6 +120,20 @@ export interface RunState {
 
   // Intent tracking
   recent_intent_hashes: string[];
+
+  // Deferred proposals (out-of-scope, retried when scope matches)
+  deferred_proposals: DeferredProposal[];
+}
+
+export interface DeferredProposal {
+  category: string;
+  title: string;
+  description: string;
+  files: string[];
+  allowed_paths: string[];
+  confidence: number;
+  impact_score: number;
+  original_scope: string;
 }
 
 // ---------------------------------------------------------------------------

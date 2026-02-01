@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-01-31
+
+### Added
+- **Project guidelines context** — automatically loads CLAUDE.md (Claude runs) or AGENTS.md (Codex runs) into every scout and execution prompt
+- Auto-creates baseline guidelines from `package.json` when no file exists
+- Configurable custom guidelines path, auto-create toggle, and refresh interval (`guidelinesRefreshCycles`)
+- `@blockspool/mcp` — MCP server package for plugin-based orchestration
+- Configurable retention, auto-prune, periodic pull, and `prune` command
+- Deferred out-of-scope proposals with automatic retry when scope matches
+- Landing page: project guidelines feature card, FAQ entry, comparison matrix row
+
+### Changed
+- Favicon replaced with BlockSpool logo (Next.js `icon.tsx` route)
+- Navbar logo size increased
+
 ## [0.1.0] - 2025-01-26
 
 ### Added
@@ -21,5 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - All packages published with npm provenance
 
-[Unreleased]: https://github.com/blockspool/blockspool/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/blockspool/blockspool/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/blockspool/blockspool/compare/v0.2.0...v0.3.3
 [0.1.0]: https://github.com/blockspool/blockspool/releases/tag/v0.2.0

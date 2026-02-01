@@ -114,6 +114,7 @@ Final Summary
 | **Deep Mode** | Principal-engineer-level architectural review (`--deep`) |
 | **Impact Scoring** | Proposals ranked by `impact x confidence`, not confidence alone |
 | **Spindle** | Loop detection prevents runaway agents |
+| **Guidelines Context** | Loads CLAUDE.md (Claude) or AGENTS.md (Codex) into every prompt; auto-creates baseline if missing |
 
 ---
 
@@ -213,6 +214,10 @@ blockspool nudge "focus on auth module"
 blockspool nudge --list
 blockspool nudge --clear
 
+# Clean up stale state
+blockspool prune
+blockspool prune --dry-run
+
 # Interactive TUI
 blockspool tui
 ```
@@ -254,21 +259,81 @@ blockspool --formula test-coverage     # Add missing tests
 blockspool --formula type-safety       # Improve TypeScript types
 blockspool --formula cleanup           # Dead code, unused imports
 blockspool --formula docs              # Documentation improvements
+blockspool --formula docs-audit        # Find stale/inaccurate docs
 blockspool --deep                      # Architectural review
 ```
 
-Custom formulas live in `.blockspool/formulas/`:
+### docs-audit
+
+The `docs-audit` formula cross-references your markdown files (README, CONTRIBUTING, docs/) against the actual codebase to find stale, inaccurate, or outdated documentation.
+
+**Automatic docs-audit:** BlockSpool automatically runs a docs-audit every 3 cycles, tracked across sessions in `.blockspool/run-state.json`. Whether you run one cycle at a time or in continuous mode, the counter persists — so your 1st, 2nd runs are normal, and the 3rd triggers a docs check.
+
+```bash
+# Change the interval (default: 3)
+blockspool --docs-audit-interval 5
+
+# Disable automatic docs-audit entirely
+blockspool --no-docs-audit
+
+# Run a one-off docs-audit manually
+blockspool --formula docs-audit
+```
+
+**Guidelines context injection:** BlockSpool automatically loads your project guidelines and injects them into every scout and execution prompt, so agents follow your conventions. For Claude runs it searches for `CLAUDE.md`; for Codex runs it searches for `AGENTS.md`. If the preferred file isn't found, it falls back to the other. If neither exists, a baseline is auto-generated from your `package.json` (disable with `"autoCreateGuidelines": false`). The file is re-read periodically during long runs (default: every 10 cycles) to pick up edits. Content is truncated to 4000 chars if needed.
+
+| Backend | Primary | Fallback |
+|---------|---------|----------|
+| Claude | `CLAUDE.md` | `AGENTS.md` |
+| Codex | `AGENTS.md` | `CLAUDE.md` |
+
+**CLAUDE.md protection:** All scout runs read `CLAUDE.md` and `.claude/` for project context but **never propose changes** to them. To opt in to CLAUDE.md edits:
+
+```bash
+blockspool --include-claude-md
+```
+
+To override the exclusion list for docs-audit specifically, create a custom formula:
+
+```yaml
+# .blockspool/formulas/docs-audit.yml  (overrides built-in)
+description: Docs audit with custom exclusions
+categories: [docs]
+min_confidence: 70
+exclude: [CLAUDE.md, .claude/**, INTERNAL.md, docs/private/**]
+prompt: |
+  Cross-reference documentation files against the actual codebase
+  to find inaccuracies. Only fix what is wrong or outdated.
+```
+
+### Custom formulas
+
+Custom formulas live in `.blockspool/formulas/` and override built-ins with the same name:
 
 ```yaml
 # .blockspool/formulas/my-formula.yml
-name: my-formula
 description: Focus on error handling
+categories: [refactor]
+exclude: [vendor/**, generated/**]
 prompt: |
   Look for error handling improvements:
   - Missing try/catch blocks
   - Silent error swallowing
   - Unhandled promise rejections
 ```
+
+**Formula fields:**
+
+| Field | Description |
+|-------|-------------|
+| `description` | What the formula does |
+| `categories` | Proposal types: `security`, `test`, `types`, `refactor`, `perf`, `docs`, `cleanup` |
+| `scope` | Directory to scan (default: `src`) |
+| `min_confidence` | Minimum confidence threshold 0-100 |
+| `max_prs` | Max PRs to create |
+| `exclude` | Glob patterns to skip (e.g., `CLAUDE.md`, `vendor/**`) |
+| `prompt` | Instructions for the scout |
+| `tags` | Organizational tags |
 
 ---
 
@@ -308,12 +373,87 @@ Optional `.blockspool/config.json`:
 
 ```json
 {
-  "defaultScope": "src",
-  "minConfidence": 70,
-  "maxPrsPerRun": 20,
-  "draftPrs": true
+  "auto": {
+    "defaultScope": "src",
+    "minConfidence": 70,
+    "maxPrs": 20,
+    "draftPrs": true,
+    "docsAudit": true,
+    "docsAuditInterval": 3,
+    "pullEveryNCycles": 5,
+    "pullPolicy": "halt",
+    "guidelinesRefreshCycles": 10,
+    "autoCreateGuidelines": true,
+    "guidelinesPath": null
+  },
+  "retention": {
+    "maxRuns": 50,
+    "maxHistoryEntries": 100
+  }
 }
 ```
+
+#### `auto` settings
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `defaultScope` | `"src"` | Directory to scan |
+| `minConfidence` | `70` | Minimum confidence threshold |
+| `maxPrs` | `3` | Max PRs per run (20 in continuous mode) |
+| `draftPrs` | `true` | Create draft PRs |
+| `docsAudit` | `true` | Set `false` to disable auto docs-audit |
+| `docsAuditInterval` | `3` | Auto docs-audit every N cycles |
+| `pullEveryNCycles` | `5` | Pull from origin every N cycles in continuous mode (0 = disabled) |
+| `pullPolicy` | `"halt"` | On pull divergence: `"halt"` stops the session, `"warn"` logs and continues |
+| `guidelinesRefreshCycles` | `10` | Re-read guidelines file every N cycles during long runs (0 = disabled) |
+| `autoCreateGuidelines` | `true` | Auto-create baseline AGENTS.md/CLAUDE.md if none exists (set `false` to disable) |
+| `guidelinesPath` | `null` | Custom path to guidelines file relative to repo root (e.g. `"docs/CONVENTIONS.md"`). Set to `false` to disable guidelines entirely. `null` = default search. |
+
+---
+
+## Retention & Cleanup
+
+BlockSpool accumulates state over time (run folders, history, artifacts). The retention system caps all unbounded state with configurable item limits.
+
+### Auto-prune
+
+On every `blockspool` session start, stale items are pruned automatically: run folders, history, artifacts, spool archives, deferred proposals, and completed tickets.
+
+### Manual prune
+
+`blockspool prune` runs the full cleanup including merged git branches (which are skipped during auto-prune to avoid touching git state on startup).
+
+```bash
+# See what would be deleted
+blockspool prune --dry-run
+
+# Delete stale items
+blockspool prune
+```
+
+### `retention` settings
+
+Add a `retention` section to `.blockspool/config.json`:
+
+```json
+{
+  "retention": {
+    "maxRuns": 25,
+    "maxHistoryEntries": 50
+  }
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `maxRuns` | `50` | Keep last N run folders |
+| `maxHistoryEntries` | `100` | Keep last N lines in history.ndjson |
+| `maxArtifactsPerRun` | `20` | Keep newest N artifact files per run |
+| `maxSpoolArchives` | `5` | Keep last N archived spool files |
+| `maxDeferredProposals` | `20` | Max deferred proposals in run-state |
+| `maxCompletedTickets` | `200` | Hard-delete oldest completed tickets beyond cap |
+| `maxSpindleFileEditKeys` | `50` | Cap file_edit_counts keys in spindle state |
+| `maxMergedBranches` | `10` | Keep last N local blockspool/* branches |
 
 ---
 

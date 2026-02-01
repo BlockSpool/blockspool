@@ -25,6 +25,7 @@ export interface Formula {
   max_prs?: number;
   model?: string;
   risk_tolerance?: 'low' | 'medium' | 'high';
+  exclude?: string[];
   tags?: string[];
 }
 
@@ -126,6 +127,30 @@ export const BUILTIN_FORMULAS: Formula[] = [
     max_prs: 10,
     tags: ['docs'],
   },
+  {
+    name: 'docs-audit',
+    version: 1,
+    description: 'Find stale, inaccurate, or missing documentation across code and markdown',
+    scope: '.',
+    categories: ['docs'],
+    min_confidence: 70,
+    risk_tolerance: 'low',
+    exclude: ['CLAUDE.md', '.claude/**'],
+    prompt: [
+      'Cross-reference documentation files (README.md, CLAUDE.md, docs/*.md, CONTRIBUTING.md)',
+      'against the actual codebase to find inaccuracies.',
+      'Look for: CLI flags/options documented that no longer exist or have changed,',
+      'features described that have been renamed or removed,',
+      'setup instructions that reference old paths or commands,',
+      'outdated architecture descriptions that no longer match the code,',
+      'missing documentation for recently added features or flags.',
+      'Read both the markdown files AND the source code they reference to verify accuracy.',
+      'Each proposal should fix one specific doc file with concrete corrections.',
+      'Do NOT add new documentation — only fix what is wrong or outdated.',
+    ].join(' '),
+    max_prs: 10,
+    tags: ['docs', 'audit'],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -218,6 +243,7 @@ function parseFormulaFile(filePath: string, name: string): Formula | null {
       max_prs: parsed.max_prs ? parseInt(parsed.max_prs, 10) : undefined,
       model: parsed.model,
       risk_tolerance: parsed.risk_tolerance as Formula['risk_tolerance'],
+      exclude: parsed.exclude ? parseStringList(parsed.exclude) : undefined,
       tags: parsed.tags ? parseStringList(parsed.tags) : undefined,
     };
   } catch {

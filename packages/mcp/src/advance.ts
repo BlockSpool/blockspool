@@ -28,6 +28,7 @@ import { deriveScopePolicy } from './scope-policy.js';
 import { checkSpindle, getFileEditWarnings } from './spindle.js';
 import { loadFormula } from './formulas.js';
 import type { Formula } from './formulas.js';
+import { loadGuidelines, formatGuidelinesForPrompt } from './guidelines.js';
 
 const MAX_PLAN_REJECTIONS = 3;
 const MAX_QA_RETRIES = 3;
@@ -165,7 +166,10 @@ async function advanceScout(ctx: AdvanceContext): Promise<AdvanceResponse> {
   // Load formula if specified
   const formula = s.formula ? loadFormula(s.formula, ctx.project.rootPath) : null;
 
-  const prompt = buildScoutPrompt(s.scope, s.categories, s.min_confidence,
+  const guidelines = loadGuidelines(ctx.project.rootPath);
+  const guidelinesBlock = guidelines ? formatGuidelinesForPrompt(guidelines) + '\n\n' : '';
+
+  const prompt = guidelinesBlock + buildScoutPrompt(s.scope, s.categories, s.min_confidence,
     s.max_proposals_per_scout, dedupContext, formula, hints, s.eco);
 
   s.scout_cycles++;
@@ -345,7 +349,10 @@ async function advanceExecute(ctx: AdvanceContext): Promise<AdvanceResponse> {
     maxLinesPerTicket: s.max_lines_per_ticket,
   });
 
-  const prompt = buildExecutePrompt(ticket, s.current_ticket_plan);
+  const guidelines = loadGuidelines(ctx.project.rootPath);
+  const guidelinesBlock = guidelines ? formatGuidelinesForPrompt(guidelines) + '\n\n' : '';
+
+  const prompt = guidelinesBlock + buildExecutePrompt(ticket, s.current_ticket_plan);
 
   return promptResponse(run, 'EXECUTE', prompt,
     `Executing ticket: ${ticket.title}`, {
@@ -520,6 +527,8 @@ function buildScoutPrompt(
     `**Categories:** ${categories.join(', ')}`,
     `**Min confidence:** ${minConfidence}`,
     `**Max proposals:** ${maxProposals}`,
+    '',
+    '**DO NOT propose changes to these files** (read-only context): CLAUDE.md, .claude/**',
     '',
   ];
 

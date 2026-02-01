@@ -32,6 +32,7 @@ blockspool solo nudge "focus on auth"         # Steer a running session
 - **Rebase-retry** — rebases ticket branch on merge conflict, retries before blocking
 - **Balanced continuous mode** — deep architectural scan every 5 cycles
 - **Live steering** (`solo nudge`) — add hints mid-run, consumed in next scout cycle
+- **Guidelines context** — loads CLAUDE.md (Claude) or AGENTS.md (Codex) into every prompt; auto-creates baseline if missing; re-reads every 10 cycles
 
 ## How It Works
 
@@ -102,3 +103,4 @@ npm run lint
 | **Spindle** | Loop detection system. Detects when an agent is spinning without progress and aborts. |
 | **Worktree** | An isolated git checkout where a ticket executes. Enables parallel execution. |
 | **Hint / Nudge** | Live guidance for a running auto session. Added via `solo nudge "text"` or stdin, consumed in the next scout cycle. |
+| **Guidelines** | Project conventions loaded from CLAUDE.md (Claude) or AGENTS.md (Codex) and injected into every prompt. Auto-created from `package.json` if missing. Re-read every 10 cycles (configurable via `auto.guidelinesRefreshCycles`). |

@@ -74,6 +74,8 @@ export interface ScoutOptions {
   customPrompt?: string;
   /** Scout backend to use (default: ClaudeScoutBackend) */
   backend?: import('./runner.js').ScoutBackend;
+  /** Files the scout can read but must NOT propose changes to */
+  protectedFiles?: string[];
 }
 
 /**

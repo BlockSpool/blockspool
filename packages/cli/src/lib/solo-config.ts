@@ -14,6 +14,43 @@ import { createLogger } from './logger.js';
 import type { SpindleConfig } from './spindle.js';
 
 /**
+ * Retention configuration — caps on unbounded state accumulation.
+ * All values are item counts (not time-based), except maxStaleBranchDays.
+ */
+export interface RetentionConfig {
+  /** Keep last N run folders in .blockspool/runs/ (default 50) */
+  maxRuns: number;
+  /** Keep last N lines in history.ndjson (default 100) */
+  maxHistoryEntries: number;
+  /** Keep newest N artifact files per run folder (default 20) */
+  maxArtifactsPerRun: number;
+  /** Keep last N archived spool files (default 5) */
+  maxSpoolArchives: number;
+  /** Max deferred proposals in run-state.json (default 20) */
+  maxDeferredProposals: number;
+  /** Hard-delete oldest completed tickets beyond this cap (default 200) */
+  maxCompletedTickets: number;
+  /** Cap file_edit_counts keys in spindle state (default 50) */
+  maxSpindleFileEditKeys: number;
+  /** Keep last N local blockspool/* branches (default 10) */
+  maxMergedBranches: number;
+}
+
+/**
+ * Default retention configuration — conservative values.
+ */
+export const DEFAULT_RETENTION_CONFIG: RetentionConfig = {
+  maxRuns: 50,
+  maxHistoryEntries: 100,
+  maxArtifactsPerRun: 20,
+  maxSpoolArchives: 5,
+  maxDeferredProposals: 20,
+  maxCompletedTickets: 200,
+  maxSpindleFileEditKeys: 50,
+  maxMergedBranches: 10,
+};
+
+/**
  * Auto configuration - the "trust ladder" settings
  */
 export interface AutoConfig {
@@ -25,6 +62,23 @@ export interface AutoConfig {
   maxLinesPerTicket: number;
   draftPrs: boolean;
   defaultScope: string;
+  docsAudit: boolean;
+  docsAuditInterval: number;
+  /** Pull from origin every N cycles to stay current with team changes (0 = disabled, default 5) */
+  pullEveryNCycles: number;
+  /** What to do when pull fails due to divergence: "halt" stops the session, "warn" logs and continues (default "halt") */
+  pullPolicy: 'halt' | 'warn';
+  /** Re-read guidelines file every N cycles to pick up changes (default 10, 0 = disabled) */
+  guidelinesRefreshCycles: number;
+  /** Auto-create a baseline guidelines file (AGENTS.md or CLAUDE.md) if none exists (default true) */
+  autoCreateGuidelines: boolean;
+  /**
+   * Custom path to guidelines file, relative to repo root.
+   * Overrides the default CLAUDE.md / AGENTS.md search.
+   * Set to false to disable guidelines entirely.
+   * Examples: "docs/GUIDELINES.md", "CONVENTIONS.md", false
+   */
+  guidelinesPath: string | false | null;
 }
 
 /**
@@ -39,6 +93,13 @@ export const DEFAULT_AUTO_CONFIG: AutoConfig = {
   maxLinesPerTicket: 300,
   draftPrs: true,
   defaultScope: 'src',
+  docsAudit: true,
+  docsAuditInterval: 3,
+  pullEveryNCycles: 5,
+  pullPolicy: 'halt' as const,
+  guidelinesRefreshCycles: 10,
+  autoCreateGuidelines: true,
+  guidelinesPath: null,
 };
 
 /**
@@ -70,6 +131,7 @@ export interface SoloConfig {
   allowedRemote?: string;
   spindle?: Partial<SpindleConfig>;
   auto?: Partial<AutoConfig>;
+  retention?: Partial<RetentionConfig>;
 }
 
 /**

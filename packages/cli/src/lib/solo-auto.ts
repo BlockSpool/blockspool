@@ -24,6 +24,7 @@ import {
   formatProgress,
 } from './solo-config.js';
 import { pathsOverlap, runPreflightChecks } from './solo-utils.js';
+import { recordCycle, isDocsAuditDue, recordDocsAudit, deferProposal, popDeferredForScope } from './run-state.js';
 import { soloRunTicket, type RunTicketResult, type ExecutionBackend, CodexExecutionBackend } from './solo-ticket.js';
 import {
   createMilestoneBranch,
@@ -33,6 +34,8 @@ import {
 } from './solo-git.js';
 import { consumePendingHints } from './solo-hints.js';
 import { startStdinListener } from './solo-stdin.js';
+import { loadGuidelines, formatGuidelinesForPrompt } from './guidelines.js';
+import type { ProjectGuidelines, GuidelinesBackend } from './guidelines.js';
 
 /**
  * Sleep helper
@@ -220,6 +223,14 @@ export async function runAutoWorkMode(options: {
 
   const config = loadConfig(repoRoot);
 
+  // Load project guidelines for execution prompts
+  const guidelines = loadGuidelines(repoRoot, {
+    customPath: config?.auto?.guidelinesPath ?? undefined,
+  });
+  if (guidelines) {
+    console.log(chalk.gray(`  Guidelines loaded: ${guidelines.source}`));
+  }
+
   const inFlight = new Map<string, { ticket: typeof readyTickets[0]; startTime: number }>();
   const results: Array<{ ticketId: string; title: string; result: RunTicketResult }> = [];
 
@@ -265,6 +276,7 @@ export async function runAutoWorkMode(options: {
             console.log(chalk.gray(`  [${ticket.id}] ${msg}`));
           }
         },
+        guidelinesContext: guidelines ? formatGuidelinesForPrompt(guidelines) : undefined,
       });
 
       if (result.success) {
@@ -424,6 +436,9 @@ export async function runAutoMode(options: {
   executeBackend?: string;
   codexModel?: string;
   codexUnsafeFullAccess?: boolean;
+  includeClaudeMd?: boolean;
+  docsAudit?: boolean;
+  docsAuditInterval?: string;
 }): Promise<void> {
   // Load formula if specified
   let activeFormula: import('./formulas.js').Formula | null = null;
@@ -465,14 +480,30 @@ export async function runAutoMode(options: {
 
   const DEEP_SCAN_INTERVAL = 5;
   let deepFormula: import('./formulas.js').Formula | null = null;
-  if (isContinuous && !activeFormula) {
+  let docsAuditFormula: import('./formulas.js').Formula | null = null;
+  if (!activeFormula) {
     const { loadFormula: loadF } = await import('./formulas.js');
-    deepFormula = loadF('deep');
+    if (isContinuous) {
+      deepFormula = loadF('deep');
+    }
+    // Docs-audit loaded here; enabled/interval resolved after config is loaded
+    if (options.docsAudit !== false) {
+      docsAuditFormula = loadF('docs-audit');
+    }
   }
 
   const getCycleFormula = (cycle: number) => {
     if (activeFormula) return activeFormula;
     if (deepFormula && isContinuous && cycle % DEEP_SCAN_INTERVAL === 0) return deepFormula;
+    // Auto docs-audit every N cycles (persisted across sessions)
+    if (docsAuditFormula && repoRoot) {
+      const interval = options.docsAuditInterval
+        ? parseInt(options.docsAuditInterval, 10)
+        : config?.auto?.docsAuditInterval ?? 3;
+      // Config can also disable docs-audit
+      const enabled = config?.auto?.docsAudit !== false;
+      if (enabled && isDocsAuditDue(repoRoot, interval)) return docsAuditFormula;
+    }
     return null;
   };
   const getCycleCategories = (formula: typeof activeFormula) => {
@@ -578,6 +609,34 @@ export async function runAutoMode(options: {
 
   const config = loadConfig(repoRoot);
   const adapter = await getAdapter(repoRoot);
+
+  // Determine guidelines backend based on execution/scout backend
+  const guidelinesBackend: GuidelinesBackend =
+    (options.executeBackend === 'codex' || options.scoutBackend === 'codex') ? 'codex' : 'claude';
+  const guidelinesOpts = {
+    backend: guidelinesBackend,
+    autoCreate: config?.auto?.autoCreateGuidelines !== false,
+    customPath: config?.auto?.guidelinesPath ?? undefined,
+  };
+
+  // Load project guidelines (CLAUDE.md for Claude, AGENTS.md for Codex)
+  let guidelines: ProjectGuidelines | null = loadGuidelines(repoRoot, guidelinesOpts);
+  const guidelinesRefreshInterval = config?.auto?.guidelinesRefreshCycles ?? 10;
+  if (guidelines) {
+    console.log(chalk.gray(`  Guidelines loaded: ${guidelines.source}`));
+  }
+
+  // Auto-prune stale state on session start (includes DB ticket cleanup)
+  try {
+    const { pruneAllAsync: pruneAllAsyncFn, getRetentionConfig } = await import('./retention.js');
+    const retentionConfig = getRetentionConfig(config);
+    const pruneReport = await pruneAllAsyncFn(repoRoot, retentionConfig, adapter);
+    if (pruneReport.totalPruned > 0) {
+      console.log(chalk.gray(`  Pruned ${pruneReport.totalPruned} stale item(s)`));
+    }
+  } catch {
+    // Non-fatal — prune failure shouldn't block the session
+  }
 
   let totalPrsCreated = 0;
   let totalFailed = 0;
@@ -704,9 +763,87 @@ export async function runAutoMode(options: {
       console.log(chalk.cyan(`New milestone branch: ${milestoneBranch}`));
     };
 
+    // Periodic pull settings
+    const pullInterval = config?.auto?.pullEveryNCycles ?? 5;
+    const pullPolicy: 'halt' | 'warn' = config?.auto?.pullPolicy ?? 'halt';
+    let cyclesSinceLastPull = 0;
+
     do {
       cycleCount++;
       const scope = getNextScope();
+
+      // Periodic pull to stay current with team changes
+      if (pullInterval > 0 && isContinuous) {
+        cyclesSinceLastPull++;
+        if (cyclesSinceLastPull >= pullInterval) {
+          cyclesSinceLastPull = 0;
+          try {
+            // First fetch so we can detect divergence before attempting merge
+            const fetchResult = spawnSync(
+              'git', ['fetch', 'origin', detectedBaseBranch],
+              { cwd: repoRoot, encoding: 'utf-8', timeout: 30000 },
+            );
+
+            if (fetchResult.status === 0) {
+              // Try fast-forward merge — fails if diverged
+              const mergeResult = spawnSync(
+                'git', ['merge', '--ff-only', `origin/${detectedBaseBranch}`],
+                { cwd: repoRoot, encoding: 'utf-8' },
+              );
+
+              if (mergeResult.status === 0) {
+                const summary = mergeResult.stdout?.trim();
+                if (summary && !summary.includes('Already up to date')) {
+                  console.log(chalk.cyan(`  ⬇ Pulled latest from origin/${detectedBaseBranch}`));
+                }
+              } else {
+                // Divergence detected — ff-only failed
+                const errMsg = mergeResult.stderr?.trim() || 'fast-forward not possible';
+
+                if (pullPolicy === 'halt') {
+                  // Finalize any in-progress milestone before stopping
+                  if (milestoneMode && milestoneTicketCount > 0) {
+                    console.log(chalk.yellow(`\n⚠ Base branch diverged — finalizing current milestone before stopping...`));
+                    await finalizeMilestone();
+                  }
+
+                  console.log();
+                  console.log(chalk.red(`✗ HCF — Base branch has diverged from origin/${detectedBaseBranch}`));
+                  console.log(chalk.gray(`  ${errMsg}`));
+                  console.log();
+                  console.log(chalk.bold('Resolution:'));
+                  console.log(`  1. Resolve the divergence (rebase, merge, or reset)`);
+                  console.log(`  2. Re-run: blockspool --hours ... --continuous`);
+                  console.log();
+                  console.log(chalk.gray(`  To keep going despite divergence, set pullPolicy: "warn" in config.`));
+
+                  if (milestoneMode) await cleanupMilestone(repoRoot);
+                  stopStdinListener?.();
+                  await adapter.close();
+                  process.exit(1);
+                } else {
+                  // warn policy — log and continue on stale base
+                  console.log(chalk.yellow(`  ⚠ Base branch diverged from origin/${detectedBaseBranch} — continuing on stale base`));
+                  console.log(chalk.gray(`    ${errMsg}`));
+                  console.log(chalk.gray(`    Subsequent work may produce merge conflicts`));
+                }
+              }
+            } else if (options.verbose) {
+              console.log(chalk.yellow(`  ⚠ Fetch failed (network?): ${fetchResult.stderr?.trim()}`));
+            }
+          } catch {
+            // Network unavailable — non-fatal, keep going
+          }
+        }
+      }
+
+      // Periodic guidelines refresh
+      if (guidelinesRefreshInterval > 0 && cycleCount > 1 && cycleCount % guidelinesRefreshInterval === 0) {
+        guidelines = loadGuidelines(repoRoot, guidelinesOpts);
+        if (guidelines && options.verbose) {
+          console.log(chalk.gray(`  Refreshed project guidelines (${guidelines.source})`));
+        }
+      }
 
       if (isContinuous && cycleCount > 1) {
         console.log();
@@ -729,8 +866,10 @@ export async function runAutoMode(options: {
       const cycleFormula = getCycleFormula(cycleCount);
       const { allow: allowCategories, block: blockCategories } = getCycleCategories(cycleFormula);
       const isDeepCycle = cycleFormula?.name === 'deep' && cycleFormula !== activeFormula;
+      const isDocsAuditCycle = cycleFormula?.name === 'docs-audit' && cycleFormula !== activeFormula;
 
-      const cycleLabel = isContinuous ? `[Cycle ${cycleCount}]${isDeepCycle ? ' 🔬 deep' : ''} ` : 'Step 1: ';
+      const cycleSuffix = isDeepCycle ? ' 🔬 deep' : isDocsAuditCycle ? ' 📄 docs-audit' : '';
+      const cycleLabel = isContinuous ? `[Cycle ${cycleCount}]${cycleSuffix} ` : 'Step 1: ';
       console.log(chalk.bold(`${cycleLabel}Scouting ${scope}...`));
 
       // Consume any pending user hints
@@ -742,7 +881,8 @@ export async function runAutoMode(options: {
 
       let lastProgress = '';
       const scoutPath = (milestoneMode && milestoneWorktreePath) ? milestoneWorktreePath : repoRoot;
-      const basePrompt = cycleFormula?.prompt || '';
+      const guidelinesPrefix = guidelines ? formatGuidelinesForPrompt(guidelines) + '\n\n' : '';
+      const basePrompt = guidelinesPrefix + (cycleFormula?.prompt || '');
       const effectivePrompt = hintBlock ? (basePrompt + hintBlock) : (basePrompt || undefined);
       const scoutResult = await scoutRepo(deps, {
         path: scoutPath,
@@ -753,6 +893,7 @@ export async function runAutoMode(options: {
         customPrompt: effectivePrompt,
         autoApprove: false,
         backend: scoutBackend,
+        protectedFiles: options.includeClaudeMd ? undefined : ['CLAUDE.md', '.claude/**'],
         onProgress: (progress: ScoutProgress) => {
           if (options.verbose) {
             const formatted = formatProgress(progress);
@@ -788,6 +929,28 @@ export async function runAutoMode(options: {
 
       console.log(chalk.gray(`  Found ${proposals.length} potential improvements`));
 
+      // Re-inject deferred proposals that now match this cycle's scope
+      const deferred = popDeferredForScope(repoRoot, scope);
+      if (deferred.length > 0) {
+        console.log(chalk.cyan(`  ♻ ${deferred.length} deferred proposal(s) now in scope`));
+        for (const dp of deferred) {
+          proposals.push({
+            id: `deferred-${Date.now()}`,
+            category: dp.category as import('@blockspool/core/scout').ProposalCategory,
+            title: dp.title,
+            description: dp.description,
+            files: dp.files,
+            allowed_paths: dp.allowed_paths,
+            confidence: dp.confidence,
+            impact_score: dp.impact_score,
+            acceptance_criteria: [],
+            verification_commands: ['npm run build'],
+            rationale: `(deferred from scope ${dp.original_scope})`,
+            estimated_complexity: 'simple' as const,
+          });
+        }
+      }
+
       const categoryFiltered = proposals.filter((p) => {
         const category = (p.category || 'refactor').toLowerCase();
         const confidence = p.confidence || 50;
@@ -798,9 +961,38 @@ export async function runAutoMode(options: {
         return true;
       });
 
-      const approvedProposals: typeof categoryFiltered = [];
+      // Scope filter — defer proposals with files outside current scope
+      const normalizedScope = scope.replace(/\*\*$/, '').replace(/\*$/, '').replace(/\/$/, '');
+      const scopeFiltered = normalizedScope
+        ? categoryFiltered.filter(p => {
+            const files = (p.files?.length ? p.files : p.allowed_paths) || [];
+            const allInScope = files.length === 0 || files.every(f =>
+              f.startsWith(normalizedScope) || f.startsWith(normalizedScope + '/')
+            );
+            if (!allInScope) {
+              deferProposal(repoRoot, {
+                category: p.category,
+                title: p.title,
+                description: p.description,
+                files: p.files || [],
+                allowed_paths: p.allowed_paths || [],
+                confidence: p.confidence || 50,
+                impact_score: p.impact_score ?? 5,
+                original_scope: scope,
+                deferredAt: Date.now(),
+              });
+              if (options.verbose) {
+                console.log(chalk.gray(`  Deferred (out of scope): ${p.title}`));
+              }
+              return false;
+            }
+            return true;
+          })
+        : categoryFiltered;
+
+      const approvedProposals: typeof scopeFiltered = [];
       let duplicateCount = 0;
-      for (const p of categoryFiltered) {
+      for (const p of scopeFiltered) {
         const dupCheck = await isDuplicateProposal(
           p,
           dedupContext.existingTitles,
@@ -945,6 +1137,7 @@ export async function runAutoMode(options: {
                 }
               },
               executionBackend,
+              guidelinesContext: guidelines ? formatGuidelinesForPrompt(guidelines) : undefined,
               ...(milestoneMode && milestoneBranch ? {
                 baseBranch: milestoneBranch,
                 skipPush: true,
@@ -1107,6 +1300,12 @@ export async function runAutoMode(options: {
       }
 
       currentlyProcessing = false;
+
+      // Record cycle completion for cross-session tracking
+      recordCycle(repoRoot);
+      if (isDocsAuditCycle) {
+        recordDocsAudit(repoRoot);
+      }
 
       if (isContinuous && shouldContinue()) {
         console.log(chalk.gray('Pausing before next cycle...'));

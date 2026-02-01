@@ -71,6 +71,31 @@ export async function filterAndCreateTickets(
   const s = run.require();
   const rejected: FilterResult['rejected'] = [];
 
+  // Step 0: Re-promote deferred proposals that now match the current scope
+  const currentScope = s.scope?.replace(/\*\*$/, '').replace(/\*$/, '').replace(/\/$/, '') || '';
+  const stillDeferred: typeof s.deferred_proposals = [];
+  for (const dp of s.deferred_proposals) {
+    const files = dp.files.length > 0 ? dp.files : dp.allowed_paths;
+    const nowInScope = !currentScope || files.length === 0 || files.every(f =>
+      f.startsWith(currentScope) || f.startsWith(currentScope + '/')
+    );
+    if (nowInScope) {
+      // Re-inject as a raw proposal
+      rawProposals.push({
+        category: dp.category,
+        title: dp.title,
+        description: dp.description,
+        files: dp.files,
+        allowed_paths: dp.allowed_paths,
+        confidence: dp.confidence,
+        impact_score: dp.impact_score,
+      });
+    } else {
+      stillDeferred.push(dp);
+    }
+  }
+  s.deferred_proposals = stillDeferred;
+
   // Step 1: Schema validation
   const valid: ValidatedProposal[] = [];
   for (const raw of rawProposals) {
@@ -101,10 +126,37 @@ export async function filterAndCreateTickets(
     return true;
   });
 
+  // Step 3b: Scope filter — defer proposals whose files fall outside session scope
+  const sessionScope = s.scope?.replace(/\*\*$/, '').replace(/\*$/, '').replace(/\/$/, '') || '';
+  const afterScope = sessionScope
+    ? afterCategory.filter(p => {
+        const files = p.files.length > 0 ? p.files : p.allowed_paths;
+        const allInScope = files.length === 0 || files.every(f =>
+          f.startsWith(sessionScope) || f.startsWith(sessionScope + '/')
+        );
+        if (!allInScope) {
+          // Defer instead of reject — will retry when scope matches
+          s.deferred_proposals.push({
+            category: p.category,
+            title: p.title,
+            description: p.description,
+            files: p.files,
+            allowed_paths: p.allowed_paths,
+            confidence: p.confidence,
+            impact_score: p.impact_score,
+            original_scope: s.scope,
+          });
+          rejected.push({ proposal: p, reason: `Deferred (files outside scope '${s.scope}'): ${files.filter(f => !f.startsWith(sessionScope)).join(', ')}` });
+          return false;
+        }
+        return true;
+      })
+    : afterCategory;
+
   // Step 4: Dedup against existing tickets (title similarity)
   const existingTickets = await repos.tickets.listByProject(db, s.project_id);
   const existingTitles = existingTickets.map(t => t.title);
-  const afterDedup = afterCategory.filter(p => {
+  const afterDedup = afterScope.filter(p => {
     const isDupe = existingTitles.some(t => titleSimilarity(t, p.title) >= 0.6);
     if (isDupe) {
       rejected.push({ proposal: p, reason: 'Duplicate of existing ticket (title similarity >= 0.6)' });

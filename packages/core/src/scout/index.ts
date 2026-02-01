@@ -291,6 +291,7 @@ export async function scout(options: ScoutOptions): Promise<ScoutResult> {
     model = 'opus',
     customPrompt,
     backend,
+    protectedFiles,
   } = options;
 
   const scoutBackend: ScoutBackend = backend ?? new ClaudeScoutBackend();
@@ -375,6 +376,7 @@ export async function scout(options: ScoutOptions): Promise<ScoutResult> {
         minConfidence,
         recentlyCompletedTitles,
         customPrompt,
+        protectedFiles,
       });
 
       // Run scout backend

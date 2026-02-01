@@ -121,6 +121,7 @@ export class RunManager {
 
       spindle: emptySpindle(),
       recent_intent_hashes: [],
+      deferred_proposals: [],
     };
 
     // Create run folder

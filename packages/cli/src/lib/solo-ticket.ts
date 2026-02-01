@@ -139,6 +139,8 @@ export interface RunTicketOptions {
   skipPr?: boolean;
   /** Execution backend override (default: ClaudeExecutionBackend) */
   executionBackend?: ExecutionBackend;
+  /** Project guidelines context to prepend to execution prompt */
+  guidelinesContext?: string;
 }
 
 /**
@@ -160,13 +162,19 @@ export type StepName = typeof EXECUTE_STEPS[number]['name'];
 /**
  * Build the prompt for Claude from a ticket
  */
-export function buildTicketPrompt(ticket: NonNullable<Awaited<ReturnType<typeof tickets.getById>>>): string {
-  const parts = [
+export function buildTicketPrompt(ticket: NonNullable<Awaited<ReturnType<typeof tickets.getById>>>, guidelinesContext?: string): string {
+  const parts: string[] = [];
+
+  if (guidelinesContext) {
+    parts.push(guidelinesContext, '');
+  }
+
+  parts.push(
     `# Task: ${ticket.title}`,
     '',
     ticket.description ?? '',
     '',
-  ];
+  );
 
   if (ticket.allowedPaths.length > 0) {
     parts.push('## Allowed Paths');
@@ -674,7 +682,7 @@ export async function soloRunTicket(opts: RunTicketOptions): Promise<RunTicketRe
     // Step 2: Run agent
     await markStep('agent', 'started');
 
-    const prompt = buildTicketPrompt(ticket);
+    const prompt = buildTicketPrompt(ticket, opts.guidelinesContext);
     const execBackend: ExecutionBackend = opts.executionBackend ?? new ClaudeExecutionBackend();
 
     const claudeResult = await execBackend.run({

@@ -170,5 +170,16 @@ Claude Code / Any LLM
        ├─ checkSpindle()     — loop detection
        ├─ deriveScopePolicy()— scope enforcement
        ├─ loadFormula()      — formula system
+       ├─ loadGuidelines()   — CLAUDE.md context injection
        └─ SQLite state       — tickets, runs, proposals
 ```
+
+## Project Guidelines Context
+
+The advance engine automatically loads project guidelines and prepends them to scout and execute prompts. This ensures agents follow project conventions without any configuration.
+
+- **Claude runs** search for `CLAUDE.md` first, then fall back to `AGENTS.md`
+- **Codex runs** search for `AGENTS.md` first, then fall back to `CLAUDE.md`
+- Loaded fresh on every `advance()` call (MCP sessions are stateless between calls)
+- Wrapped in `<project-guidelines>` XML tags
+- Truncated to 4000 characters if needed

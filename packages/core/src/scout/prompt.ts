@@ -18,6 +18,8 @@ export function buildScoutPrompt(options: {
   minConfidence: number;
   recentlyCompletedTitles?: string[];
   customPrompt?: string;
+  /** Files the scout can read but must NOT propose changes to */
+  protectedFiles?: string[];
 }): string {
   const {
     files,
@@ -28,7 +30,12 @@ export function buildScoutPrompt(options: {
     minConfidence,
     recentlyCompletedTitles,
     customPrompt,
+    protectedFiles,
   } = options;
+
+  const protectedNote = protectedFiles?.length
+    ? `\n\n**DO NOT propose changes to these files** (read-only context): ${protectedFiles.join(', ')}\n`
+    : '';
 
   const categoryFilter = types?.length
     ? `Focus ONLY on these categories: ${types.join(', ')}`
@@ -82,7 +89,7 @@ ${categoryFilter}
    - Prefer "npm test" for test categories
 
 3. Generate at most ${maxProposals} proposals, prioritized by impact.
-${strategicFocus}${recentContext}
+${protectedNote}${strategicFocus}${recentContext}
 
 ## Files to Analyze
 
