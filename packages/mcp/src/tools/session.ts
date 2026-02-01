@@ -117,7 +117,7 @@ export function registerSessionTools(server: McpServer, getState: () => SessionM
     'Report an event back to BlockSpool. Used after executing an action from advance(). Triggers state transitions.',
     {
       type: z.string().describe('Event type (e.g., SCOUT_OUTPUT, PLAN_SUBMITTED, TICKET_RESULT, QA_PASSED, QA_FAILED, PR_CREATED, USER_OVERRIDE).'),
-      payload: z.record(z.unknown()).describe('Event payload data.'),
+      payload: z.record(z.string(), z.unknown()).describe('Event payload data.'),
     },
     async (params) => {
       const state = getState();
